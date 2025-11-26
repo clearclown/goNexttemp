@@ -3,6 +3,14 @@
 Go + Next.js によるフルスタックWebアプリケーションのテンプレートリポジトリ。
 PWA対応、独自認証システム搭載。
 
+## 段階的スケーリング
+
+```
+Local (Podman) → Fly.io (無料枠) → AWS + CloudFlare + Terraform
+```
+
+標準的な Docker イメージを使用しているため、将来的に AWS ECS/Fargate などへの移行が容易。
+
 ## 技術スタック
 
 ### フロントエンド (`frontend/`)
@@ -10,7 +18,7 @@ PWA対応、独自認証システム搭載。
 | カテゴリ | 技術 |
 |---------|------|
 | パッケージ管理 | pnpm |
-| フレームワーク | Next.js (App Router) |
+| フレームワーク | Next.js 15 (App Router) |
 | 言語 | TypeScript |
 | Linter/Formatter | BiomeJS |
 | スタイリング | TailwindCSS |
@@ -23,7 +31,7 @@ PWA対応、独自認証システム搭載。
 
 | カテゴリ | 技術 |
 |---------|------|
-| 言語 | Go 1.22+ |
+| 言語 | Go 1.23+ |
 | フレームワーク | Gin |
 | ORM | GORM |
 | DB | PostgreSQL |
@@ -39,9 +47,9 @@ PWA対応、独自認証システム搭載。
 | カテゴリ | 技術 |
 |---------|------|
 | タスクランナー | Task (go-task) |
-| コンテナ | Podman (podman-compose) |
-| バックエンドホスティング | Firebase (Cloud Run) |
-| フロントエンドホスティング | Vercel |
+| コンテナ | Podman (podman compose) |
+| フロントエンドホスティング | Vercel (無料) |
+| バックエンドホスティング | Fly.io (無料枠) |
 | CI/CD | GitHub Actions |
 
 ## ディレクトリ構成
@@ -61,8 +69,7 @@ goNexttemp/
 │   │   ├── unit/              # Vitest
 │   │   └── e2e/               # Playwright
 │   ├── public/
-│   │   ├── manifest.json      # PWAマニフェスト
-│   │   └── icons/             # PWAアイコン
+│   │   └── manifest.json      # PWAマニフェスト
 │   ├── package.json
 │   ├── biome.json
 │   └── next.config.ts
@@ -80,20 +87,21 @@ goNexttemp/
 │   ├── pkg/
 │   │   └── response/          # 共通レスポンス
 │   ├── migrations/            # DBマイグレーション
+│   ├── Dockerfile             # 本番用
+│   ├── fly.toml               # Fly.io 設定
 │   ├── go.mod
 │   └── go.sum
 │
 ├── infra/
-│   ├── podman/
-│   │   ├── compose.yaml       # frontend + backend + postgres
-│   │   ├── Containerfile.frontend
-│   │   └── Containerfile.backend
-│   └── firebase/
+│   └── podman/
+│       ├── compose.yaml       # frontend + backend + postgres
+│       ├── Containerfile.frontend
+│       └── Containerfile.backend
 │
 ├── .github/
 │   └── workflows/
-│       ├── frontend.yml
-│       └── backend.yml
+│       ├── frontend.yml       # Vercel CI
+│       └── backend.yml        # Fly.io デプロイ
 │
 ├── .env.example
 ├── .gitignore
@@ -108,8 +116,8 @@ goNexttemp/
 
 - Node.js 20+
 - pnpm 9+
-- Go 1.22+
-- Podman + podman-compose
+- Go 1.23+
+- Podman + podman compose
 - Task (go-task)
 
 **Task のインストール:**
@@ -141,8 +149,9 @@ task
 # === 一括実行 ===
 task setup              # 初回セットアップ（全自動）
 task dev                # 開発環境起動 + ログフォロー
-task ci                 # CI用チェック（lint + test + build）
+task ci                 # CI用チェック（lint + security + test + build）
 task check              # 全体lint
+task security           # 全体セキュリティスキャン
 task test               # 全体テスト
 task build              # 全体ビルド
 
@@ -161,12 +170,14 @@ task frontend:lint      # BiomeJS lint
 task frontend:lint:fix  # BiomeJS lint + 自動修正
 task frontend:test      # Vitest テスト
 task frontend:test:e2e  # Playwright E2E
+task frontend:security  # セキュリティスキャン
 
 # === バックエンド ===
 task backend:dev        # Air ホットリロード (localhost:8080)
 task backend:build      # ビルド
 task backend:lint       # go vet + staticcheck
 task backend:test       # Go テスト
+task backend:security   # gosec + govulncheck
 
 # === データベース ===
 task migrate:up         # マイグレーション適用
@@ -205,10 +216,6 @@ JWT_SECRET=your-super-secret-key-change-in-production
 JWT_ACCESS_EXPIRY=15m
 JWT_REFRESH_EXPIRY=168h
 
-# === Firebase (本番用) ===
-FIREBASE_PROJECT_ID=
-FIREBASE_API_KEY=
-
 # === CORS ===
 CORS_ORIGINS=http://localhost:3000
 ```
@@ -232,26 +239,58 @@ POST /api/v1/auth/logout    # ログアウト
 GET  /api/v1/auth/me        # 現在のユーザー情報
 ```
 
+## デプロイ
+
+### フロントエンド → Vercel
+
+```bash
+cd frontend
+vercel --prod
+```
+
+または GitHub 連携で自動デプロイ。
+
+### バックエンド → Fly.io
+
+**初回セットアップ:**
+
+```bash
+# Fly.io CLI インストール
+brew install flyctl
+
+# ログイン
+fly auth login
+
+# アプリ作成 & デプロイ
+cd backend
+fly launch
+
+# PostgreSQL 作成 & アタッチ
+fly postgres create --name gonexttemp-db
+fly postgres attach gonexttemp-db
+
+# 環境変数設定
+fly secrets set JWT_SECRET=your-secret-key-min-32-chars
+fly secrets set CORS_ORIGINS=https://your-frontend.vercel.app
+
+# デプロイ
+fly deploy
+```
+
+**GitHub Actions 自動デプロイ:**
+
+```bash
+# デプロイ用トークン発行
+fly tokens create deploy -x 999999h
+
+# GitHub Secrets に FLY_API_TOKEN として設定
+```
+
 ## PWA対応
 
 - オフラインキャッシュ対応
 - ホーム画面へのインストール
 - プッシュ通知対応（要設定）
-
-## デプロイ
-
-### フロントエンド → Vercel
-
-1. Vercelでプロジェクト作成
-2. Root Directory: `frontend`
-3. Framework Preset: Next.js
-4. 環境変数を設定
-
-### バックエンド → Firebase Cloud Run
-
-1. GitHub Actions で自動デプロイ
-2. `backend.yml` ワークフローが実行
-3. Firebase プロジェクト設定が必要
 
 ## ライセンス
 
