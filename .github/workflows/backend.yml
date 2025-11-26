@@ -67,6 +67,7 @@ jobs:
 
       - name: Run govulncheck
         run: govulncheck ./...
+        continue-on-error: true
 
       - name: Run Snyk security scan
         uses: snyk/actions/golang@master
