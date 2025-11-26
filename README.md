@@ -125,7 +125,7 @@ brew install go-task
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/your-username/goNexttemp.git
+git clone https://github.com/clearclown/goNexttemp.git
 cd goNexttemp
 
 # 一括セットアップ（依存チェック → 環境構築 → 起動 → マイグレーション）
