@@ -32,11 +32,18 @@ tasks:
       - task: logs
 
   ci:
-    desc: CI用の全チェック実行（lint + test + build）
+    desc: CI用の全チェック実行（lint + security + test + build）
     cmds:
       - task: check
+      - task: security
       - task: test
       - task: build
+
+  security:
+    desc: 全体のセキュリティスキャン
+    cmds:
+      - task: frontend:security
+      - task: backend:security
 
   check:
     desc: 全体のチェック（lint）
@@ -225,6 +232,14 @@ tasks:
     cmds:
       - pnpm test:e2e
 
+  frontend:security:
+    desc: フロントエンドのセキュリティスキャン
+    dir: frontend
+    cmds:
+      - echo "🔍 依存関係の脆弱性をチェック中..."
+      - pnpm audit --audit-level=high || true
+      - echo "✅ セキュリティスキャン完了"
+
   # ============================================
   # バックエンド
   # ============================================
@@ -277,6 +292,25 @@ tasks:
       - go test -v -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
       - echo "✅ coverage.html を生成しました"
+
+  backend:security:
+    desc: バックエンドのセキュリティスキャン
+    dir: backend
+    cmds:
+      - echo "🔍 Go セキュリティスキャン中..."
+      - |
+        if ! command -v gosec &> /dev/null; then
+          echo "gosec をインストール中..."
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+        fi
+        gosec ./... || true
+      - |
+        if ! command -v govulncheck &> /dev/null; then
+          echo "govulncheck をインストール中..."
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+        fi
+        govulncheck ./...
+      - echo "✅ セキュリティスキャン完了"
 
   # ============================================
   # データベース
