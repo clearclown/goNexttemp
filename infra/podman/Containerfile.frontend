@@ -1,0 +1,23 @@
+# ============================================
+# Frontend Containerfile (Next.js + pnpm)
+# ============================================
+
+FROM node:20-alpine
+
+# pnpm をインストール
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# 依存関係をコピー
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# ソースコードをコピー
+COPY . .
+
+# ポート公開
+EXPOSE 3000
+
+# 開発サーバー起動
+CMD ["pnpm", "dev"]

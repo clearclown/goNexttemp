@@ -1,0 +1,339 @@
+# https://taskfile.dev
+version: "3"
+
+dotenv: [".env"]
+
+vars:
+  COMPOSE_FILE: infra/podman/compose.yaml
+
+tasks:
+  # ============================================
+  # 一括実行タスク
+  # ============================================
+  default:
+    desc: ヘルプを表示
+    cmds:
+      - task --list
+
+  setup:
+    desc: 初回セットアップ（依存関係インストール + 環境構築）
+    cmds:
+      - task: check:deps
+      - task: env:init
+      - task: install
+      - task: up
+      - task: migrate:up
+      - echo "✅ セットアップ完了！ http://localhost:3000 でアクセスできます"
+
+  dev:
+    desc: 開発環境を起動（Podman + ホットリロード）
+    deps: [up]
+    cmds:
+      - task: logs
+
+  ci:
+    desc: CI用の全チェック実行（lint + test + build）
+    cmds:
+      - task: check
+      - task: test
+      - task: build
+
+  check:
+    desc: 全体のチェック（lint）
+    cmds:
+      - task: frontend:lint
+      - task: backend:lint
+
+  test:
+    desc: 全体のテスト実行
+    cmds:
+      - task: frontend:test
+      - task: backend:test
+
+  build:
+    desc: 全体のビルド
+    cmds:
+      - task: frontend:build
+      - task: backend:build
+
+  install:
+    desc: 全依存関係のインストール
+    cmds:
+      - task: frontend:install
+      - task: backend:install
+
+  # ============================================
+  # 環境チェック
+  # ============================================
+  check:deps:
+    desc: 必要な依存ツールの確認
+    cmds:
+      - |
+        echo "🔍 依存ツールをチェック中..."
+
+        # Node.js
+        if ! command -v node &> /dev/null; then
+          echo "❌ Node.js がインストールされていません"
+          exit 1
+        fi
+        echo "✅ Node.js $(node -v)"
+
+        # pnpm
+        if ! command -v pnpm &> /dev/null; then
+          echo "❌ pnpm がインストールされていません"
+          echo "   インストール: npm install -g pnpm"
+          exit 1
+        fi
+        echo "✅ pnpm $(pnpm -v)"
+
+        # Go
+        if ! command -v go &> /dev/null; then
+          echo "❌ Go がインストールされていません"
+          exit 1
+        fi
+        echo "✅ Go $(go version | cut -d' ' -f3)"
+
+        # Podman
+        if ! command -v podman &> /dev/null; then
+          echo "❌ Podman がインストールされていません"
+          exit 1
+        fi
+        echo "✅ Podman $(podman -v | cut -d' ' -f3)"
+
+        # podman-compose
+        if ! command -v podman-compose &> /dev/null; then
+          echo "❌ podman-compose がインストールされていません"
+          echo "   インストール: pip install podman-compose"
+          exit 1
+        fi
+        echo "✅ podman-compose インストール済み"
+
+        echo ""
+        echo "🎉 全ての依存ツールが揃っています！"
+    silent: true
+
+  env:init:
+    desc: .env ファイルの初期化
+    cmds:
+      - |
+        if [ ! -f .env ]; then
+          cp .env.example .env
+          echo "✅ .env ファイルを作成しました"
+        else
+          echo "ℹ️  .env ファイルは既に存在します"
+        fi
+    silent: true
+
+  # ============================================
+  # Podman
+  # ============================================
+  up:
+    desc: 全サービス起動（PostgreSQL + Backend + Frontend）
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} up -d
+      - echo "✅ サービスを起動しました"
+      - task: ps
+
+  down:
+    desc: 全サービス停止
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} down
+      - echo "✅ サービスを停止しました"
+
+  restart:
+    desc: 全サービス再起動
+    cmds:
+      - task: down
+      - task: up
+
+  logs:
+    desc: ログをフォロー
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} logs -f
+
+  logs:backend:
+    desc: バックエンドのログのみ表示
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} logs -f backend
+
+  logs:frontend:
+    desc: フロントエンドのログのみ表示
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} logs -f frontend
+
+  ps:
+    desc: コンテナ状態確認
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} ps
+
+  clean:
+    desc: コンテナ・ボリューム・ビルドキャッシュを削除
+    cmds:
+      - podman-compose -f {{.COMPOSE_FILE}} down -v
+      - rm -rf frontend/.next frontend/node_modules
+      - rm -rf backend/bin backend/tmp
+      - echo "✅ クリーンアップ完了"
+
+  # ============================================
+  # フロントエンド
+  # ============================================
+  frontend:install:
+    desc: フロントエンド依存関係インストール
+    dir: frontend
+    cmds:
+      - pnpm install
+
+  frontend:dev:
+    desc: フロントエンド開発サーバー起動（ローカル）
+    dir: frontend
+    cmds:
+      - pnpm dev
+
+  frontend:build:
+    desc: フロントエンドビルド
+    dir: frontend
+    cmds:
+      - pnpm build
+
+  frontend:lint:
+    desc: フロントエンドのlint実行
+    dir: frontend
+    cmds:
+      - pnpm lint:check
+
+  frontend:lint:fix:
+    desc: フロントエンドのlint修正
+    dir: frontend
+    cmds:
+      - pnpm lint
+
+  frontend:test:
+    desc: フロントエンドのユニットテスト
+    dir: frontend
+    cmds:
+      - pnpm test --run
+
+  frontend:test:watch:
+    desc: フロントエンドのテスト（ウォッチモード）
+    dir: frontend
+    cmds:
+      - pnpm test
+
+  frontend:test:e2e:
+    desc: フロントエンドのE2Eテスト
+    dir: frontend
+    cmds:
+      - pnpm test:e2e
+
+  # ============================================
+  # バックエンド
+  # ============================================
+  backend:install:
+    desc: バックエンド依存関係インストール
+    dir: backend
+    cmds:
+      - go mod download
+
+  backend:dev:
+    desc: バックエンド開発サーバー起動（Air ホットリロード）
+    dir: backend
+    cmds:
+      - |
+        if ! command -v air &> /dev/null; then
+          echo "Air をインストール中..."
+          go install github.com/air-verse/air@latest
+        fi
+        air
+
+  backend:build:
+    desc: バックエンドビルド
+    dir: backend
+    cmds:
+      - go build -o bin/server ./cmd/server
+
+  backend:lint:
+    desc: バックエンドのlint実行
+    dir: backend
+    cmds:
+      - go vet ./...
+      - |
+        if command -v staticcheck &> /dev/null; then
+          staticcheck ./...
+        else
+          echo "⚠️  staticcheck がインストールされていません（スキップ）"
+          echo "   インストール: go install honnef.co/go/tools/cmd/staticcheck@latest"
+        fi
+
+  backend:test:
+    desc: バックエンドのテスト実行
+    dir: backend
+    cmds:
+      - go test -v ./...
+
+  backend:test:coverage:
+    desc: バックエンドのテスト（カバレッジ付き）
+    dir: backend
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "✅ coverage.html を生成しました"
+
+  # ============================================
+  # データベース
+  # ============================================
+  migrate:up:
+    desc: マイグレーション適用
+    dir: backend
+    cmds:
+      - |
+        if ! command -v migrate &> /dev/null; then
+          echo "golang-migrate をインストール中..."
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+        fi
+        migrate -path migrations -database "${DATABASE_URL}" up
+
+  migrate:down:
+    desc: マイグレーションロールバック（1つ）
+    dir: backend
+    cmds:
+      - migrate -path migrations -database "${DATABASE_URL}" down 1
+
+  migrate:down:all:
+    desc: マイグレーション全ロールバック
+    dir: backend
+    cmds:
+      - migrate -path migrations -database "${DATABASE_URL}" down -all
+
+  migrate:create:
+    desc: 新規マイグレーション作成（NAME=xxx）
+    dir: backend
+    cmds:
+      - |
+        if [ -z "{{.NAME}}" ]; then
+          echo "❌ NAME を指定してください"
+          echo "   例: task migrate:create NAME=create_posts"
+          exit 1
+        fi
+        migrate create -ext sql -dir migrations -seq {{.NAME}}
+        echo "✅ マイグレーションファイルを作成しました"
+
+  migrate:status:
+    desc: マイグレーション状態確認
+    dir: backend
+    cmds:
+      - migrate -path migrations -database "${DATABASE_URL}" version
+
+  # ============================================
+  # ユーティリティ
+  # ============================================
+  db:shell:
+    desc: PostgreSQL に接続
+    cmds:
+      - podman exec -it gonexttemp-postgres psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gonexttemp}
+
+  db:reset:
+    desc: データベースをリセット（全データ削除）
+    cmds:
+      - task: migrate:down:all
+      - task: migrate:up
+      - echo "✅ データベースをリセットしました"
