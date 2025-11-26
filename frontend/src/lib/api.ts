@@ -22,7 +22,7 @@ class ApiClient {
     };
 
     if (this.accessToken) {
-      (headers as Record<string, string>)["Authorization"] = `Bearer ${this.accessToken}`;
+      (headers as Record<string, string>).Authorization = `Bearer ${this.accessToken}`;
     }
 
     const response = await fetch(url, {

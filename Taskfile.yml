@@ -107,13 +107,13 @@ tasks:
         fi
         echo "✅ Podman $(podman -v | cut -d' ' -f3)"
 
-        # podman-compose
-        if ! command -v podman-compose &> /dev/null; then
-          echo "❌ podman-compose がインストールされていません"
-          echo "   インストール: pip install podman-compose"
+        # podman compose
+        if ! podman compose version &> /dev/null; then
+          echo "❌ podman compose が利用できません"
+          echo "   Podman 4.1.0 以上が必要です"
           exit 1
         fi
-        echo "✅ podman-compose インストール済み"
+        echo "✅ podman compose $(podman compose version --short)"
 
         echo ""
         echo "🎉 全ての依存ツールが揃っています！"
@@ -137,14 +137,14 @@ tasks:
   up:
     desc: 全サービス起動（PostgreSQL + Backend + Frontend）
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} up -d
+      - podman compose -f {{.COMPOSE_FILE}} up -d
       - echo "✅ サービスを起動しました"
       - task: ps
 
   down:
     desc: 全サービス停止
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} down
+      - podman compose -f {{.COMPOSE_FILE}} down
       - echo "✅ サービスを停止しました"
 
   restart:
@@ -156,27 +156,27 @@ tasks:
   logs:
     desc: ログをフォロー
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} logs -f
+      - podman compose -f {{.COMPOSE_FILE}} logs -f
 
   logs:backend:
     desc: バックエンドのログのみ表示
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} logs -f backend
+      - podman compose -f {{.COMPOSE_FILE}} logs -f backend
 
   logs:frontend:
     desc: フロントエンドのログのみ表示
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} logs -f frontend
+      - podman compose -f {{.COMPOSE_FILE}} logs -f frontend
 
   ps:
     desc: コンテナ状態確認
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} ps
+      - podman compose -f {{.COMPOSE_FILE}} ps
 
   clean:
     desc: コンテナ・ボリューム・ビルドキャッシュを削除
     cmds:
-      - podman-compose -f {{.COMPOSE_FILE}} down -v
+      - podman compose -f {{.COMPOSE_FILE}} down -v
       - rm -rf frontend/.next frontend/node_modules
       - rm -rf backend/bin backend/tmp
       - echo "✅ クリーンアップ完了"
@@ -218,7 +218,7 @@ tasks:
     desc: フロントエンドのユニットテスト
     dir: frontend
     cmds:
-      - pnpm test --run
+      - pnpm vitest run
 
   frontend:test:watch:
     desc: フロントエンドのテスト（ウォッチモード）
@@ -296,6 +296,8 @@ tasks:
   backend:security:
     desc: バックエンドのセキュリティスキャン
     dir: backend
+    env:
+      PATH: "{{.HOME}}/go/bin:{{.PATH}}"
     cmds:
       - echo "🔍 Go セキュリティスキャン中..."
       - |
@@ -303,13 +305,13 @@ tasks:
           echo "gosec をインストール中..."
           go install github.com/securego/gosec/v2/cmd/gosec@latest
         fi
-        gosec ./... || true
+        ~/go/bin/gosec ./... || true
       - |
         if ! command -v govulncheck &> /dev/null; then
           echo "govulncheck をインストール中..."
           go install golang.org/x/vuln/cmd/govulncheck@latest
         fi
-        govulncheck ./...
+        ~/go/bin/govulncheck ./...
       - echo "✅ セキュリティスキャン完了"
 
   # ============================================
